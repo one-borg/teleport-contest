@@ -1,0 +1,291 @@
+# Contestant API contract
+
+Your fork must export a single async function from `js/jsmain.js`.
+The scoring harness calls it once per game segment, reads what it
+returns, and compares against the recorded ground truth.
+
+```js
+// js/jsmain.js
+export async function runSegment(input, prevGame = null) {
+    // ... your code: launch a game, replay the keys, capture frames ...
+    return game;
+}
+```
+
+That's the whole interface. Everything below is mechanics.
+
+## How scoring works, technically
+
+A **session** is one or more **segments** played in sequence. A
+session passes when both its PRNG and screen output match the
+recorded C reference 100%, end to end.
+
+For each session, scoring runs:
+
+```
+game = null
+for segment in session.segments:
+    game = await runSegment(segment, game)
+
+screens  = game.getScreens()    // collected across all segments
+rngLog   = game.getRngLog()     // collected across all segments
+cursors  = game.getCursors()    // collected across all segments
+```
+
+Then it compares positionally:
+
+| Channel | Compared how |
+|---|---|
+| **PRNG** | Every entry in `rngLog` must equal the C trace's call at the same index. Format and ordering are exact. |
+| **Screen** | Every entry in `screens` is canonicalized (charset, SGR, version banner, trailing whitespace) then byte-compared to the recorded C frame. |
+| **Cursor** | Tiebreaker only — match if you can. |
+
+Both PRNG and screen must reach 100% for the session to pass. Your
+score is the number of passing sessions.
+
+## `input` — what the harness gives you
+
+```js
+{
+    seed:      <number>,    // PRNG seed; pass to your initRng()
+    datetime:  <string>,    // "YYYYMMDDHHMMSS"; the C side uses this
+                            //   for time-of-day, moon phase, hire-date,
+                            //   shopkeeper greeting line, etc.
+    nethackrc: <string>,    // multi-line OPTIONS=… text. Drives chargen
+                            //   (name/role/race/gender/align), pet,
+                            //   autopickup, msg_window, symset, …
+    moves:     <string>,    // raw key sequence to replay from the very
+                            //   first keystroke. Includes startup
+                            //   prompts (chargen, lore --More--, …)
+                            //   AND in-game keys.
+}
+```
+
+That's all. **The recorded screens, cursors, and RNG calls are not
+passed in** — you can't peek at the answer key. You have to actually
+port the game.
+
+## `prevGame` — multi-segment state
+
+A "session" can be multiple consecutive games (a save/restore, a
+chained `#quit`/new-game sequence, a bones-leaving death/new-game
+pair). `runSegment` is called once per segment with the previous
+segment's returned `game` as the second argument:
+
+```js
+let game = null;
+for (const segment of session.segments) {
+    game = await runSegment(segment, game);  // gets previous game as 2nd arg
+}
+```
+
+`prevGame` is `null` on the first segment of a session and the
+previous segment's returned `game` afterward. You're responsible for
+preserving any C-side cross-segment state (record file, bones, save)
+across calls.
+
+## `game` — what you return
+
+Any object with three methods. Their cumulative output across all
+segments of a session is what gets compared.
+
+```js
+{
+    getScreens():  string[],         // one per input boundary
+    getRngLog():   string[],         // every PRNG call in order
+    getCursors():  [col, row, vis][] // cursor at each boundary
+}
+```
+
+### `getScreens()`
+
+One string per **input boundary** — that is, every time C's
+`tty_nhgetch()` blocks waiting for the next key. The first frame is
+the initial state before any key. Each subsequent frame is the
+terminal state after consuming one key from `moves`.
+
+A frame is the visible terminal contents. Format isn't tightly
+specified — both your output and the recorded ground truth are
+canonicalized before comparison (see *Screen comparator* below).
+The provided `frozen/terminal.js` has a `serialize()` method that
+produces the canonical format directly from a 24×80 grid; the
+provided `js/jsmain.js` capture hook calls it for you.
+
+If you implement your own terminal, output anything that — after
+canonicalization — matches the recorded screen.
+
+### `getRngLog()`
+
+Every PRNG call your code made, in order, formatted as one of:
+
+```
+rn2(N)=M
+rnd(N)=M
+rn1(N,B)=M
+rnl(N)=M
+rne(N)=M
+rnz(N)=M
+d(N,B)=M
+```
+
+The provided `frozen/isaac64.js` is the canonical PRNG engine. The
+provided `js/rng.js` is a wrapper that produces the right log
+format. If you replace `js/rng.js`, your replacement must produce
+log entries in the same format.
+
+The log is compared positionally. Your call N must equal C's call N
+exactly (after stripping the `@ caller(file:line)` annotation that
+C-side recordings carry).
+
+### `getCursors()`
+
+Currently scored as a tiebreaker only — match it if you can; not
+required for a session to pass.
+
+## What's frozen
+
+Two files in your fork are overlaid from the canonical copy before
+every scoring run:
+
+| File | Why frozen |
+|---|---|
+| `js/isaac64.js` | Canonical PRNG engine. Without this, any contestant could produce any RNG sequence trivially. |
+| `js/terminal.js` | Canonical 24×80 terminal grid + serialization. Defines what counts as "the screen." |
+
+Plus the scoring infrastructure (not part of your fork; lives only
+in the scorer):
+
+| File | Why frozen |
+|---|---|
+| `frozen/ps_test_runner.mjs` | The scoring runner — same one ships in your fork so you can self-test. |
+| `frozen/session_loader.mjs` | Normalizes session JSON to the v5 shape passed to `runSegment`. |
+
+Everything else in `js/` — including `js/jsmain.js`, `js/rng.js`,
+`js/display.js`, `js/const.js` — is yours to edit, replace, or
+restructure.
+
+## Screen comparator
+
+Both sides are canonicalized before string compare. Two screens are
+considered equal if they render to the same visible content, even
+when the underlying byte sequences differ:
+
+- **Version banner** lines (`Version X.Y.Z … built …`) are collapsed
+  to a sentinel — the build timestamp varies by C build and would
+  otherwise punish contestants for not pinning to a moving target.
+- **Cursor-forward escapes** (`\x1b[NC`) expand to N spaces — both
+  encodings are equivalent on a freshly-cleared row.
+- **SGR (color/attribute) sequences** are canonicalized — `\x1b[27m\x1b[39m`
+  and `\x1b[0m` both render as "reset to default" and compare equal.
+- **SI/SO charset transitions** (`\x0e`/`\x0f`) are normalized via a
+  fixpoint commutation loop — they slide past spaces and ANSI
+  escapes without changing visible output.
+- **Trailing whitespace** at line ends is stripped.
+
+See `frozen/ps_test_runner.mjs` `normalizeScreen()` for the exact
+implementation.
+
+## Scoring isolation — the sandbox
+
+Your `runSegment` runs in a Node child process spawned with
+`--permission` and a tight `--allow-fs-read` whitelist (just your
+fork's tree + the runner script directory). Your process **cannot**:
+
+- write to the filesystem
+- open network sockets
+- spawn child processes or worker threads
+- load native addons
+- access anything outside your fork
+
+The recorded ground truth is held in a separate process and never
+crosses the IPC boundary into your code. The only thing that crosses
+is the `input` object above.
+
+## Local self-test
+
+```bash
+# Score one session
+node frozen/ps_test_runner.mjs sessions/seed8000-tourist-starter.session.json
+
+# Score everything
+bash frozen/score.sh
+```
+
+Same comparator, same input shape as the official scoring run. The
+only differences:
+
+- Local self-test does not enforce the sandbox (faster iteration;
+  debug freely).
+- Local self-test only sees the 44 public sessions. The official run
+  also scores against 44 held-out sessions you never see.
+
+## Worked example — minimal `runSegment`
+
+```js
+// Hypothetical minimal implementation that just plays the keys and
+// captures the rendered terminal each time the game asks for input.
+
+import { initRng, enableRngLog, getRngLog } from './rng.js';
+import { Terminal } from './terminal.js';
+
+export async function runSegment(input, prevGame = null) {
+    const game = prevGame || createFreshGame();
+
+    initRng(input.seed);
+    enableRngLog();
+
+    const terminal = new Terminal(null, { rows: 24, cols: 80 });
+    game.terminal = terminal;
+    game.applyNethackrc(input.nethackrc);
+    game.setDatetime(input.datetime);
+
+    // Capture frame BEFORE each key — mirrors when C's tty_nhgetch fires.
+    game.onBeforeReadKey = () => {
+        game._capturedScreens.push(terminal.serialize());
+        game._capturedCursors.push([terminal.cursorCol, terminal.cursorRow, 1]);
+    };
+
+    for (const ch of input.moves) {
+        game.pushKey(ch.charCodeAt(0));
+    }
+    await game.run();   // runs until input queue empty
+
+    return {
+        getScreens: () => game._capturedScreens,
+        getRngLog:  () => getRngLog(),
+        getCursors: () => game._capturedCursors,
+    };
+}
+```
+
+The provided skeleton in `js/jsmain.js` is more elaborate (it uses a
+`NethackGame` class and a pre-nhgetch hook), but the contract is the
+same.
+
+## FAQ
+
+**Can I replace `js/rng.js`?** Yes, but it must use `frozen/isaac64.js`
+underneath and produce the same log entry format. If your PRNG values
+differ from C's, you fail.
+
+**Can I replace `js/terminal.js`?** No — it's frozen.
+
+**Can I replace `js/display.js`?** Yes. It builds your in-game screens.
+Just make sure they compare equal (after canonicalization) to C's.
+
+**Can I add new files under `js/`?** Yes. Anything that helps.
+
+**Can I import from outside `js/`?** Only what your fork ships:
+`frozen/`, `nethack-c/upstream/` (read-only reference), and node
+built-ins. The sandbox blocks anything else.
+
+**Does `runSegment` get a fresh process per call?** Per *session*,
+yes. Per *segment* within a session, no — you get the previous
+segment's `game` as `prevGame`.
+
+**What if my code throws?** That session is marked errored and the
+message is reported. Errors don't break other sessions.
+
+**What if my code runs forever?** Each session has a 900-second
+wall-clock limit. After that, the runner kills the process and
+records a timeout.

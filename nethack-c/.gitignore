@@ -1,0 +1,4 @@
+# Built artifacts of build-recorder.sh — not checked in.
+# Everything (source tree + installed binary + data) lives under recorder/
+recorder/
+*.bak

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="The Teleport Coding Challenge — port NetHack C to JavaScript.">
+<meta name="theme-color" content="#f9f7f1">
+<title>The Teleport Coding Challenge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+:root {
+    --color-bg: #f9f7f1;
+    --color-text: #333;
+    --color-text-muted: #666;
+    --color-accent: #6b2c2c;
+    --color-accent-dark: #4a2020;
+    --color-terminal-bg: #000;
+    --color-terminal-border: #2a2a2a;
+    --font-serif: 'EB Garamond', Georgia, serif;
+    --font-mono: "DejaVu Sans Mono", "Bitstream Vera Sans Mono", "Liberation Mono", monospace;
+    --game-font-size: 16;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-serif);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 2em 1em;
+}
+
+h1 {
+    font-size: 1.8em;
+    font-weight: 600;
+    color: var(--color-accent-dark);
+    margin-bottom: 0.3em;
+    letter-spacing: 0.02em;
+}
+
+.subtitle {
+    font-size: 1.1em;
+    font-style: italic;
+    color: var(--color-text-muted);
+    margin-bottom: 1.5em;
+}
+
+#game-container {
+    border: 2px solid var(--color-terminal-border);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    margin-bottom: 1.5em;
+}
+
+.info {
+    font-size: 0.95em;
+    color: var(--color-text-muted);
+    text-align: center;
+    line-height: 1.6;
+    max-width: 50em;
+}
+
+.info a {
+    color: var(--color-accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.info a:hover {
+    text-decoration: underline;
+}
+
+.controls {
+    font-family: var(--font-mono);
+    font-size: 0.8em;
+    color: var(--color-text-muted);
+    margin-top: 0.8em;
+}
+
+kbd {
+    display: inline-block;
+    padding: 0.1em 0.4em;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: #eee;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    box-shadow: 0 1px 0 #aaa;
+}
+</style>
+</head>
+<body>
+
+<h1>The Teleport Coding Challenge</h1>
+<p class="subtitle">Port NetHack 5.0 from C to JavaScript with bit-exact parity.</p>
+
+<div id="game-container"></div>
+
+<div class="info">
+    Click the terminal to focus.
+    Move with <kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd><kbd>y</kbd><kbd>u</kbd><kbd>b</kbd><kbd>n</kbd>
+    or arrow keys.<br>
+    <a href="https://mazesofmenace.ai/leaderboard/">Leaderboard</a> &middot;
+    <a href="https://github.com/davidbau/teleport-contest">Source &amp; Rules</a> &middot;
+    <a href="https://mazesofmenace.ai">Mazes of Menace</a>
+</div>
+
+<script type="module">
+import { GameDisplay } from './js/game_display.js';
+import { NethackGame } from './js/jsmain.js';
+import { game } from './js/gstate.js';
+import { moveloop_core } from './js/allmain.js';
+
+async function main() {
+    const display = new GameDisplay('game-container');
+    display.flags = { color: true };
+
+    const seed = Math.floor(Math.random() * 10000);
+    display.putstr(0, 0, `Starting NetHack with seed ${seed}...`);
+    display.putstr(0, 2, 'Click here and press any key.');
+
+    await display.readKey();
+    display.clearScreen();
+
+    const nhGame = new NethackGame({ seed });
+    nhGame._pendingDisplay = display;
+    game.nhDisplay = display;
+
+    await nhGame.start();
+
+    for (;;) {
+        await moveloop_core();
+        if (game.program_state?.gameover) break;
+    }
+}
+
+main().catch(e => {
+    console.error(e);
+    document.getElementById('game-container').textContent = 'Error: ' + e.message;
+});
+</script>
+</body>
+</html>

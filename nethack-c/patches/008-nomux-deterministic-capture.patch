@@ -1,0 +1,60 @@
+diff --git a/win/tty/termcap.c b/win/tty/termcap.c
+--- a/win/tty/termcap.c
++++ b/win/tty/termcap.c
+@@ -917,7 +917,25 @@
+         nomux_raw_putch((int)(unsigned char)*p);
+     nomux_raw_putch('\n');  /* puts() / tty_raw_print_bold both append a newline */
+     if (bold) nomux_attr_cur = 0;
+-    nomux_capture_write_input_boundary();
++    /* INTENTIONALLY do NOT call nomux_capture_write_input_boundary() here.
++     *
++     * The Python harness side (run_session.py:wait_for_nomux_advance)
++     * waits for SEQ to advance past prev_seq, then reads the screen file.
++     * If raw_emit bumps SEQ on EVERY call, the harness sees SEQ advance
++     * after the FIRST emit and proceeds to read the screen — capturing
++     * INTERMEDIATE topten output (e.g. blank-only-emitted, before
++     * "You made the top ten list!" is written). This produced a
++     * non-deterministic 1-blank vs 2-blank pattern in seed0030 segs
++     * 1/2/5/7 (issue #460). Adding a tiny I/O delay here (an fopen+fclose
++     * for debug) was enough to consistently shift to 1-blank for all
++     * segments — confirming the race.
++     *
++     * Letting the next tty_nhgetch / tty_nh_poskey call's
++     * nomux_capture_write_input_boundary fire is not enough at game-end
++     * because there's no further input wait after topten — the next
++     * thing is nh_terminate(). So we add a single write at nh_terminate
++     * (see src/end.c) to capture the final state once topten has
++     * finished emitting. */
+ }
+ 
+ void nomux_raw_emit_eol(void) {
+diff --git a/src/end.c b/src/end.c
+--- a/src/end.c
++++ b/src/end.c
+@@ -6,6 +6,7 @@
+ #define NEED_VARARGS /* comment line for pre-compiled headers */
+ 
+ #include "hack.h"
++#include "wintty.h"  /* for NOMUX_CAPTURE define + nomux_capture_write_input_boundary decl (#460) */
+ #ifndef NO_SIGNAL
+ #include <signal.h>
+ #endif
+@@ -1679,6 +1680,18 @@
+ {
+     program_state.in_moveloop = 0; /* won't be returning to normal play */
+ 
++#ifdef NOMUX_CAPTURE
++    /* Issue #460: capture the final post-topten screen state once,
++     * deterministically, before tearing down. nomux_raw_emit no longer
++     * writes the file per emit (that caused intermediate captures); the
++     * write at nhgetch is the normal sync point during gameplay, but
++     * after death/quit there's no further nhgetch — topten emits then
++     * we get here. This single call ensures the harness sees the final
++     * state (with all topten lines painted) when waiting for SEQ to
++     * advance. See termcap.c nomux_raw_emit for the matching comment. */
++    nomux_capture_write_input_boundary();
++#endif
++
+     l_nhcore_call(NHCORE_GAME_EXIT);
+ #ifdef MACOS9
+     getreturn("to exit");
