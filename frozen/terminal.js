@@ -630,6 +630,38 @@ span.terminal-cursor {
      * each input boundary.
      */
     serialize() {
+        // Map NetHack color (0..15) to ANSI fg code. NO_COLOR (8) → 39 (default).
+        const colorToFg = (color) => {
+            if (color === 8 || color < 0 || color > 15) return 39;
+            return color < 8 ? 30 + color : 90 + (color - 8);
+        };
+        // Build the SGR sequence to transition from (curFg, curAttr) to
+        // (wantFg, wantAttr). Returns '' if no transition is needed.
+        const sgrTransition = (curFg, curAttr, wantFg, wantAttr) => {
+            if (curFg === wantFg && curAttr === wantAttr) return '';
+            const wantBold = (wantAttr & 2) !== 0;
+            const wantUnder = (wantAttr & 4) !== 0;
+            const wantInv = (wantAttr & 1) !== 0;
+            const curBold = (curAttr & 2) !== 0;
+            const curUnder = (curAttr & 4) !== 0;
+            const curInv = (curAttr & 1) !== 0;
+            // If any attribute needs to clear, we need a full reset.
+            const needReset = (curBold && !wantBold) || (curUnder && !wantUnder) || (curInv && !wantInv);
+            const codes = [];
+            if (needReset) {
+                codes.push(0);
+                if (wantBold) codes.push(1);
+                if (wantUnder) codes.push(4);
+                if (wantInv) codes.push(7);
+                if (wantFg !== 39) codes.push(wantFg);
+            } else {
+                if (wantBold && !curBold) codes.push(1);
+                if (wantUnder && !curUnder) codes.push(4);
+                if (wantInv && !curInv) codes.push(7);
+                if (wantFg !== curFg) codes.push(wantFg);
+            }
+            return codes.length ? `\x1b[${codes.join(';')}m` : '';
+        };
         let lastRow = 0;
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
@@ -637,6 +669,7 @@ span.terminal-cursor {
             }
         }
         let out = '';
+        let curFg = 39, curAttr = 0;
         for (let r = 0; r <= lastRow; r++) {
             let lastCol = -1;
             for (let c = this.cols - 1; c >= 0; c--) {
@@ -649,7 +682,20 @@ span.terminal-cursor {
             }
             if (firstCol > 4) out += `\x1b[${firstCol}C`;
             else if (firstCol > 0) out += ' '.repeat(firstCol);
-            for (let c = firstCol; c <= lastCol; c++) out += this.grid[r][c].ch;
+            for (let c = firstCol; c <= lastCol; c++) {
+                const cell = this.grid[r][c];
+                const wantFg = colorToFg(cell.color);
+                const wantAttr = cell.attr | 0;
+                out += sgrTransition(curFg, curAttr, wantFg, wantAttr);
+                curFg = wantFg;
+                curAttr = wantAttr;
+                out += cell.ch;
+            }
+            // Reset to default at end of line so the cursor-forward escape
+            // on the next row doesn't carry forward the previous row's color.
+            out += sgrTransition(curFg, curAttr, 39, 0);
+            curFg = 39;
+            curAttr = 0;
             if (r < lastRow) out += '\n';
         }
         return out;

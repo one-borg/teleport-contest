@@ -170,6 +170,13 @@ function normalizeScreen(s) {
     cur = cur.replace(/^\d{2}:\d{2}:\d{2}\.$/gm, '<time>.');
     cur = canonSGR(cur);
     cur = cur.replace(/\x1b\[(\d+)C/g, (_, n) => ' '.repeat(parseInt(n, 10)));
+    // Translate DEC charset spans (\x0e..\x0f) to Unicode. Must run BEFORE
+    // the SI/SO commutation loop below, which would move SI/SO past content
+    // and make state-machine translation impossible.
+    cur = translateDecSpans(cur);
+    // After translation there should be no \x0e/\x0f left, but defensively
+    // run the original commutation cleanup in case translateDecSpans left
+    // any unbalanced markers (e.g. \x0e at end of string).
     cur = cur.replace(/[\x0e\x0f]+$/gm, '');
     cur = cur.replace(/\x0f((?:\x1b\[[0-9;]*[a-zA-Z])*)$/gm, '$1');
     cur = cur.replace(/^\x0f( +\x0e)/gm, '$1');
@@ -183,7 +190,6 @@ function normalizeScreen(s) {
         cur = cur.replace(/\x0e\x0f/g, '');
         cur = cur.replace(/\x0f\x0e/g, '');
     } while (cur !== prev);
-    cur = translateDecSpans(cur);
     return cur;
 }
 
