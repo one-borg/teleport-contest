@@ -68,10 +68,15 @@ Three things, layered like the Dungeons of Doom themselves.
 
 ### 1. A skeleton port of NetHack 5.0
 
-A minimal JavaScript implementation that does just enough to play
-through one short tourist game (`seed8000-tourist-starter`) and not
-much more. Think of it as the surface layer: gentle, well-mapped, and
-populated almost entirely with grid bugs. You will have to dig.
+A minimal JavaScript implementation that runs through the first short
+tourist game (`seed8000-tourist-starter`) far enough to render a few
+recognizable screens. It does NOT pass that session yet — chargen is
+unimplemented, and the skeleton "fakes" the early game by replaying a
+hardcoded sequence of PRNG draws read out of the recorded session
+(see `js/fastforward.js`). It's enough scaffolding to see the engine
+move; it's not enough to score. Treat it as the surface layer:
+gentle, well-mapped, populated almost entirely with grid bugs. You
+will have to dig.
 
 **Where the code lives:**
 
@@ -81,6 +86,8 @@ js/
 ├── isaac64.js         ← FROZEN: canonical PRNG engine. Don't touch.
 ├── terminal.js        ← FROZEN: 24×80 grid + serialize(). Don't touch.
 ├── rng.js             ← PRNG wrappers (rn2, rnd, d, …). Edit freely.
+├── fastforward.js     ← Hardcoded RNG-replay scaffolding for seed8000.
+│                        A trap to escape — see below.
 ├── nethack.js         ← top-level NetHack class. Mostly a stub.
 ├── const.js           ← 2,000+ constants imported from upstream headers.
 ├── allmain.js         ← the move loop. Currently very polite.
@@ -98,10 +105,11 @@ python3 -m http.server 8000   # any static server works
 open http://localhost:8000/
 ```
 
-You will be greeted by a NetHack chargen prompt. Pick a tourist
-(the skeleton hasn't met the other twelve roles yet — they may seem
-strange to it). Move around a few squares. Watch your `js/jsmain.js`
-get exercised in real time.
+There's no chargen prompt yet — the skeleton skips straight into the
+game with a hardcoded character because `js/fastforward.js` replays
+the PRNG calls that real chargen would produce. You'll see a small
+room and a tourist. Move around a few squares. Watch your
+`js/jsmain.js` get exercised in real time.
 
 **A brief tour:** start in `js/jsmain.js` to see the contest API
 entry point, then follow the call chain into `js/nethack.js` →
@@ -110,45 +118,65 @@ mostly under `js/mklev.js`, `js/cmd.js`, and a long list of files that
 don't exist yet but need to (`js/mon.js`, `js/dog.js`, `js/spell.js`,
 etc. — a complete NetHack port has on the order of 80 source files).
 
+**About `fastforward.js`:** it's a hardcoded list of `rn2(N)` calls
+that fakes the RNG sequence for `seed8000` only. It will never
+generalize and it will never pass a held-out session. The path
+forward is to delete its entries one at a time, replacing each with
+the real C function port that produces those calls naturally.
+
 The skeleton is "what works without porting much." Everything beyond
 is yours to build. *Be careful, ahead.*
 
-### 2. Patches that make C NetHack reproducible
+### 2. Patches to make C NetHack deterministic
 
-NetHack as shipped is a wonderfully nondeterministic program. It
-seeds its PRNG from the system clock. It calls `time(NULL)` for moon
-phase, hire dates, and shopkeeper greetings ("Hello stranger" varies
-with the hour you visit). It uses the platform's `qsort`, whose
-tie-breaking varies by libc. It writes to ncurses, not a captured
-stream you can compare. None of this is a bug; it's how NetHack has
-always behaved. If you played twice in a row at exactly midnight on a
-full moon, the dungeon would helpfully cooperate to make sure you
-noticed.
+Your goal is to clone the behavior of NetHack 5.0 exactly. But for
+the contest to score that, the C side has to produce the same output
+every time it runs — not depend on the system clock, not depend on
+the libc's `qsort` tie-breaking, not write straight to ncurses where
+nothing is captured. So this repo includes a patched build of NetHack
+5.0 that introduces two new environment variables you can pin:
 
-For the contest to score "did your JS produce the same behavior as
-C," the C side has to behave the same way every time you run it.
-That takes eight small patches, all in `nethack-c/patches/`:
+- **`NETHACK_SEED`** — seeds the PRNG. Same seed → same dungeon, same
+  monsters, same loot.
+- **`NETHACK_FIXED_DATETIME`** — sets the date and time of play
+  (format `YYYYMMDDHHMMSS`). NetHack uses the wall clock for moon
+  phase, hire dates, shopkeeper greetings, and the Friday-the-13th
+  luck penalty; pinning the datetime makes all of these reproducible.
 
-| # | What | Why |
-|---|---|---|
-| 001 | Pin date/time + RNG seed via env vars | Time-of-day affects everything from moon phase to which line the shopkeeper greets you with |
-| 002 | Replace `qsort` with a stable sort | Tie-breaking order varies by libc, scrambling the order of monsters and objects |
-| 003 | Log every core PRNG call (`rn2`/`rnd`/`d`/...) | First of three PRNG contexts the port must reproduce |
-| 004 | Tag Lua-side PRNG calls with their source location | Lua scripts (special levels) use the same PRNG, and we need to know which call is which |
-| 005 | Log the third PRNG context (display/hallucination) | Hallucination uses a separate stream so it doesn't perturb gameplay PRNG |
-| 006-008 | Replace tty curses with deterministic 24×80 frame capture | We need exact terminal contents at every input boundary |
+Plus changes to log every PRNG call (so you can see what C consumed
+and in what order), to capture the 24×80 terminal as a deterministic
+stream (not curses), and to swap in a stable sort. Eight patches total.
+
+The C source is organized like this:
+
+```
+nethack-c/
+├── upstream/                   ← git submodule pinned to NetHack 5.0.0_Release
+│                                 (clean upstream from github.com/NetHack/NetHack)
+├── patches/                    ← the eight deterministic-build patches:
+│   ├── 001-deterministic-runtime.patch        — NETHACK_SEED + NETHACK_FIXED_DATETIME
+│   ├── 002-deterministic-qsort.patch          — stable sort
+│   ├── 003-rng-log-core.patch                 — log core PRNG calls
+│   ├── 004-rng-log-lua-context.patch          — tag Lua-side PRNG calls
+│   ├── 005-rng-display-logging.patch          — log the display PRNG (hallucination)
+│   └── 006-008-nomux-*.patch                  — capture 24×80 terminal stream
+├── build-recorder.sh           ← clones submodule, applies patches, builds binary
+├── macosx-minimal              ← macOS hints file (upstream doesn't ship one)
+├── README.md                   ← deeper notes on each patch
+└── recorder/                   ← gitignored — built source tree + binary appears here
+```
 
 Yes, NetHack has **three independent PRNG contexts** — core gameplay,
 Lua-script (for special levels), and display (for hallucination
-effects). Your JS port has to reproduce all three, in the right
-order, with the right values. PRNG parity is the foundation: a
-single off-by-one RNG call cascades through the entire dungeon and
-nothing else can match. But getting the random numbers right doesn't
-get you the screens — that's a separate, harder problem. The screens
-are where most of NetHack actually lives: the message line, the map
-draws, the inventory menus, the prompts, the cursor dance, the
-forty-six years of accumulated terminal handling. Most contestants'
-time will be spent there.
+effects). Patches 003-005 instrument all three. Your JS port has to
+reproduce all three, in the right order, with the right values. PRNG
+parity is the foundation: a single off-by-one RNG call cascades through
+the entire dungeon and nothing else can match. But getting the random
+numbers right doesn't get you the screens — that's a separate, harder
+problem. The screens are where most of NetHack actually lives: the
+message line, the map draws, the inventory menus, the prompts, the
+cursor dance, the forty-six years of accumulated terminal handling.
+Most contestants' time will be spent there.
 
 **Build the recorder:**
 
@@ -157,12 +185,19 @@ git submodule update --init nethack-c/upstream
 bash nethack-c/build-recorder.sh
 ```
 
-This pulls upstream NetHack 5.0 (the same source that ships from
-github.com/NetHack/NetHack at tag `NetHack-5.0.0_Release`), applies
-the eight patches, and builds the recorder under `nethack-c/recorder/`
-(gitignored). You don't need to do this to enter the contest — the
-recorded sessions are already in `sessions/`. You only need to build
-the recorder if you want to record your own debugging delvings.
+This clones the submodule (NetHack 5.0.0_Release source from
+github.com/NetHack/NetHack), applies the eight patches into
+`nethack-c/recorder/`, and builds the binary at
+`nethack-c/recorder/install/games/lib/nethackdir/nethack`. The
+`recorder/` directory is gitignored — it's built artifact, not source.
+
+You do NOT need to do this to enter the contest. The 44 sessions in
+`sessions/` were recorded with this build and ship ready to score
+against. Build the recorder only if you want to record your own
+debugging sessions or generate supplemental coverage (see
+`PROMPT.md` Parts 2 and 4).
+
+Requires: `clang` (not gcc — see below), `make`, `bison`, `flex`.
 
 **Why clang specifically:** C's argument evaluation order is
 officially undefined. In practice, gcc evaluates right-to-left and
