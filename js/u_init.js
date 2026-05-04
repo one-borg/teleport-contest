@@ -188,6 +188,7 @@ export function newpw() {
 export function u_init_misc() {
     const u = game.u;
     game.flags.female = game.flags.initgend === 1;
+    if (!u.uhave) u.uhave = { amulet: false };
     if (!u.ualign) u.ualign = { type: 0, record: 0 };
     if (!u.ualignbase) u.ualignbase = [0, 0];
     u.ulevel = 0;

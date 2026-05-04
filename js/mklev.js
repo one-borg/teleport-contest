@@ -83,26 +83,26 @@ const TRAPNUM = 26;
 const ARROW_TRAP = 1;
 const DART_TRAP = 2;
 const ROCKTRAP = 3;
-const SLP_GAS_TRAP = 6;
+const SLP_GAS_TRAP = 8;
 const ROLLING_BOULDER_TRAP = 7;
-const RUST_TRAP = 4;
-const SQKY_BOARD = 5;
-const FIRE_TRAP = 8;
-const PIT = 9;
-const SPIKED_PIT = 10;
-const HOLE = 11;
+const RUST_TRAP = 9;
+const SQKY_BOARD = 4;
+const FIRE_TRAP = 10;
+const PIT = 11;
+const SPIKED_PIT = 12;
+const HOLE = 13;
 const TRAPDOOR = 14;
 const TELEP_TRAP = 15;
 const LEVEL_TELEP = 16;
-const WEB = 17;
-const STATUE_TRAP = 18;
-const MAGIC_TRAP = 19;
-const LANDMINE = 20;
-const POLY_TRAP = 21;
-const VIBRATING_SQUARE = 22;
-const TRAPPED_DOOR = 23;
-const TRAPPED_CHEST = 24;
-const MAGIC_PORTAL = 25;
+const MAGIC_PORTAL = 17;
+const WEB = 18;
+const STATUE_TRAP = 19;
+const MAGIC_TRAP = 20;
+const LANDMINE = 6;
+const POLY_TRAP = 22;
+const VIBRATING_SQUARE = 23;
+const TRAPPED_DOOR = 24;
+const TRAPPED_CHEST = 25;
 
 function is_hole(t) { return t === HOLE || t === TRAPDOOR; }
 function is_pit(t) { return t === PIT || t === SPIKED_PIT; }
@@ -387,12 +387,22 @@ function mkobj(oclass, artif) {
             if (r11 === 0) {
                 rne(3);
             } else {
-                blessorcurse(obj, 10);
+                const r10b = rn2(10);
+                if (r10b === 0) {
+                    rn2(2);
+                    rne(3);
+                } else {
+                    blessorcurse(obj, 10);
+                }
             }
         } else {
             rn2(2);
             rne(3);
         }
+        rn2(40);
+        mkobj_erosions_stub();
+    } else if (oclass === AMULET_CLASS) {
+        blessorcurse(obj, 10);
     }
     return obj;
 }
@@ -469,8 +479,8 @@ async function makemon(mdat, x, y, mmflags) {
     next_ident();
     // newmonhp (early-game approximation uses rnd(4))
     const hp = rnd(4);
-    // random gender when eligible
-    rn2(2);
+    // random gender when eligible (skip for MM_NOGRP stubs)
+    if (!mmflags) rn2(2);
     // m_initinv (inventory chance roll)
     rn2(50);
     rn2(100);
@@ -1794,11 +1804,12 @@ async function mktrap_room(croom) {
     const trap = await maketrap(pos.x, pos.y, kind);
     kind = trap ? trap.ttyp : NO_TRAP;
     const lvl = game.u?.uz?.dlevel ?? 1;
-    if (game.in_mklev && kind !== NO_TRAP
+    const victim_ok = game.in_mklev && kind !== NO_TRAP
         && lvl <= rnd(4)
         && kind !== SQKY_BOARD && kind !== RUST_TRAP
         && !(kind === ROLLING_BOULDER_TRAP && trap.launch?.x === trap.tx && trap.launch?.y === trap.ty)
-        && !is_pit(kind) && (kind < HOLE || kind === MAGIC_TRAP)) {
+        && !is_pit(kind) && (kind < HOLE || kind === MAGIC_TRAP);
+    if (victim_ok) {
         if (kind === LANDMINE) { trap.ttyp = PIT; trap.tseen = true; }
         mktrap_victim(trap);
     }
@@ -1853,11 +1864,7 @@ async function fill_ordinary_room(croom, bonus_items) {
 
     const pos = { x: 0, y: 0 };
     // Sleeping monster (33%)
-    if (!rn2(3)) {
-        if (!somexyspace(croom, pos)) {
-            pos.x = croom.rlx;
-            pos.y = croom.rly;
-        }
+    if (!rn2(3) && somexyspace(croom, pos)) {
         await makemon(null, pos.x, pos.y, 2); // MM_NOGRP
     }
     // Traps
