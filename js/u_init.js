@@ -5,6 +5,7 @@ import { game } from './gstate.js';
 import { A_MAX, A_STR, A_CON, A_WIS } from './const.js';
 import { roles, races, aligns } from './roles.js';
 import { rn2, rnd, rn1 } from './rng.js';
+import { consume_role_inventory_rng, consume_role_extras_rng } from './inventory_init.js';
 
 function clamp(v, lo, hi) {
     if (v < lo) return lo;
@@ -204,6 +205,10 @@ export function u_init_inventory_attrs() {
     const roleName = curRole().name.m;
     if (roleName === 'Healer') u.umoney0 = rn1(1000, 1001);
     if (roleName === 'Tourist') u.umoney0 = rnd(1000);
+
+    // Consume RNG for role inventory quantities and random extras.
+    consume_role_inventory_rng(roleName);
+    consume_role_extras_rng(roleName);
 
     init_attr(75);
     vary_init_attr();
