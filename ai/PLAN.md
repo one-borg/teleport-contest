@@ -9,19 +9,22 @@
 - Never edit frozen infrastructure (`js/isaac64.js`, `js/terminal.js`, `frozen/*`).
 - README.md is frozen for this project. Do not edit it.
 - If any additional files are explicitly declared frozen by the user, treat them as read-only and call that out here.
+- `js/terminal.js` is currently modified in the working tree outside this plan; do not touch or revert without explicit approval.
 
 ## Baseline (measured on 2026-05-04)
-- `0/44` public sessions passing (last full score not re-run yet in this revision).
-- `seed8000-tourist-starter`: RNG `1458/3102`, Screen `0/22`.
-- `seed0077-rogue-chargen`: RNG `1606/3242`, Screen `11/33`.
+- Full score not re-run in this revision.
+- `seed8000-tourist-starter`: RNG `3102/3102`, Screen `22/22` (passes).
+- `seed0077-rogue-chargen`: RNG `3069/3242`, Screen `11/33`.
+  - First RNG mismatch: `rn2(8)` expected at `collect_coords(teleport.c:700)` vs JS `rn2(1)`.
+  - First screen mismatch: stats line (attribute order/values).
 
 ## Reflection (Step Back)
-What is holding us back is still core startup/chargen + early level generation parity. The first mismatches are mostly:
-- Attribute/role/race/alignment initialization order.
-- Early mklev object/monster creation RNG ordering (`mkobj`, `makemon`, `rndmonst_adj`, `blessorcurse`).
-- Engraving/rumor text RNG consumption (`random_engraving`, `getrumor`, `wipeout_text`).
+We have cleared early rumor/engraving RNG and mineralization mismatches for one session, so remaining failures are now concentrated in:
+- Startup/chargen attribute initialization order (stats line mismatch).
+- Missing teleport/placement RNG (`collect_coords` in `teleport.c`).
+- Remaining mklev object/monster RNG ordering (`mkobj`, `makemon`, `rndmonst_adj`, `blessorcurse`).
 
-These are foundational and recur across sessions, so fixing them is the fastest path to both quick wins and strong final submission.
+These are still foundational. Fixing them should unlock both the two-session fast track and general robustness across held-out sessions.
 
 ## Two-Session Fast Track (Primary Objective)
 Target sessions:
@@ -29,23 +32,28 @@ Target sessions:
 - `sessions/seed0077-rogue-chargen.session.json`
 
 ### Step 1: Chargen and Stats Line Parity
-- Port the exact C call order for role/race/align selection, `u_init`, and `init_attr`/`vary_init_attr`.
-- Match `newhp`/`newpw` timing and `ulevel` transitions.
-- Confirm starting stats line matches C after the very first screen.
+- Port the exact C call order for role/race/align selection, `u_init`, `init_attr`/`vary_init_attr`, and initial HP/Pw.
+- Verify `newhp`/`newpw` timing and `ulevel` transitions vs C.
+- Confirm the very first stats line matches in both sessions.
 
-### Step 2: Early mklev RNG Ordering
+### Step 2: Teleport RNG Alignment
+- Implement `collect_coords` (ring collection + shuffling) in JS and wire to any early-game callers.
+- If call sites are still missing, insert a temporary stub that consumes the correct RNG calls and returns a deterministic, safe result; then replace with full logic.
+
+### Step 3: Early mklev RNG Ordering
 - Align `fill_ordinary_room` RNG gates and `makemon`/`mktrap` ordering.
 - Implement `makemon` RNG consumption more precisely (gender, peacefulness, group size).
 - Ensure `rndmonst_adj` call sites are never skipped or reordered by JS stubs.
 
-### Step 3: Engraving/Rumor RNG
+### Step 4: Engraving/Rumor RNG
 - Implement `getrumor`/`get_rnd_line` and `wipeout_text` RNG sequences to match C.
 - Use real rumor data (`nethack-c/upstream/dat/rumors.tru`/`rumors.fal`) with padding logic.
 - Confirm RNG log matches expected `rn2(25762)` pattern and subsequent wipeouts.
 
-### Step 4: Tight Verification Loop
+### Step 5: Tight Verification Loop
 - After each fix, run `node ai/scripts/first_mismatch.mjs` on both sessions.
 - Record a snapshot with `node ai/scripts/progress_snapshot.mjs`.
+- Run `node --test` to guard regressions.
 
 Exit criteria:
 - Both sessions pass RNG + Screen end-to-end.
@@ -88,6 +96,7 @@ Phase D: Gameplay breadth
 
 ## Immediate Next Actions
 1. Fix chargen/stat initialization order and verify the stats line for Tourist/Rogue.
-2. Align `makemon` RNG consumption with C (gender/peace/group handling).
-3. Implement rumor text and `wipeout_text` RNG parity to unblock engraving mismatches.
+2. Implement `collect_coords` (or stub its RNG consumption) and wire early call sites.
+3. Align `makemon` RNG consumption with C (gender/peace/group handling).
 4. Re-run `ai/scripts/progress_snapshot.mjs` and update progress logs.
+5. Keep `node --test` passing after each fix.

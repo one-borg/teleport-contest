@@ -18,11 +18,10 @@ function parseRolePetnum() {
         let currentRole = null;
         let tokens = [];
         for (const line of lines) {
-            const roleMatch = line.match(/\{\s*\{\s*\"([^\"]+)\"/);
-            if (roleMatch) {
-                currentRole = roleMatch[1];
+            const roleMatch = line.match(/^(\s*)\{\s*\{\s*\"([^\"]+)\"/);
+            if (roleMatch && roleMatch[1].length <= 4) {
+                currentRole = roleMatch[2];
                 tokens = [];
-                continue;
             }
             if (!currentRole) continue;
             const matches = line.match(/\b(?:PM_[A-Z0-9_]+|NON_PM)\b/g);
