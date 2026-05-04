@@ -7,16 +7,16 @@
 import { game } from './gstate.js';
 import { rn2, rnd } from './rng.js';
 import { mklev, l_nhcore_init, u_on_upstairs } from './mklev.js';
-import { rhack } from './cmd.js';
+import { rhack, openTutorialPrompt } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline, set_screen_override, clear_screen_override } from './display.js';
 import { vision_recalc, vision_reset, init_vision_globals } from './vision.js';
 import { fastforward_step } from './fastforward.js';
 import { buildLegacyText } from './chargen.js';
 import { nhgetch } from './input.js';
-import { u_init_misc, u_init_inventory_attrs } from './u_init.js';
+import { u_init_misc, u_init_inventory_attrs, applyStartingAC } from './u_init.js';
 import { init_dungeons } from './dungeon_init.js';
 import { init_objects } from './o_init.js';
-import { consume_pet_type_rng } from './pet.js';
+import { makedog_stub } from './pet.js';
 
 // C ref: allmain.c newgame()
 export async function newgame() {
@@ -45,18 +45,24 @@ export async function newgame() {
     // Structural phase consumes RNG for rooms/corridors/doors/stairs
     await mklev();
 
-    // Starting pet selection (makedog() / pet_type()).
-    consume_pet_type_rng();
-
-    // Initialize inventory-derived attributes and basic stats.
-    u_init_inventory_attrs();
-
     g.moves = g.moves ?? 1;
     g.plname = g.plname || 'Contestant';
 
     // C ref: allmain.c newgame() → u_on_upstairs()
     // Places hero on upstair, or special stair, or random room position.
     u_on_upstairs();
+
+    // Starting pet creation (makedog/pet_type RNG + placement).
+    makedog_stub();
+
+    // Initialize inventory-derived attributes and basic stats.
+    u_init_inventory_attrs();
+
+    // C Lua core shuffle observed after inventory init in session logs.
+    if (g.flags?.legacy) {
+        rn2(3);
+        rn2(2);
+    }
 
     // Initial display
     init_vision_globals();
@@ -74,6 +80,9 @@ export async function newgame() {
         clear_screen_override();
     }
 
+    // Apply starting AC after legacy splash (C computes it before welcome).
+    applyStartingAC();
+
     // Welcome message
     const alignName =
         g.u?.ualign?.type === 0 ? 'neutral' : g.u?.ualign?.type > 0 ? 'lawful' : 'chaotic';
@@ -87,6 +96,13 @@ export async function newgame() {
         roleName === 'Valkyrie' ? 'Velkommen' :
         'Hello';
     await pline(`${hello} ${g.plname}, welcome to NetHack!  You are a ${alignName} ${genderAdj} ${raceAdj} ${roleName}.`);
+    if (g.flags?.tutorial) {
+        if (g._pending_message != null) g._pending_message += '--More--';
+        g._message_hold_frames = 1;
+        g._tutorial_prompt_armed = true;
+    } else {
+        g._message_hold_frames = 0;
+    }
 }
 
 // C ref: allmain.c moveloop_core()
@@ -97,10 +113,6 @@ export async function moveloop_core() {
         g._did_moveloop_preamble = true;
     }
 
-    // Fast-forward per-step RNG (monster movement, regen, sounds, hunger)
-    const stepNum = (g.moves || 1) - 1;
-    fastforward_step(stepNum);
-
     // Vision + display
     if (g.vision_full_recalc) {
         vision_recalc(0);
@@ -109,8 +121,24 @@ export async function moveloop_core() {
     await bot();
     await flush_screen(1);
 
+    if (g._tutorial_prompt_pending && !g.uiMode) {
+        openTutorialPrompt();
+        g._tutorial_prompt_pending = false;
+        await flush_screen(1);
+    }
+
     // Read and execute one command
     await rhack(0);
+
+    // Fast-forward per-step RNG (monster movement, regen, sounds, hunger)
+    if (g.context?.move) {
+        if (g.urole?.name?.m === 'Tourist') {
+            const stepNum = g.moves || 1;
+            fastforward_step(stepNum);
+        } else {
+            turn_rng_stub();
+        }
+    }
 
     // Keep command messages visible for one input boundary when requested.
     if (g._message_hold_frames > 0) {
@@ -130,6 +158,15 @@ function moveloop_preamble(resuming) {
         rnd(9000);
         rnd(30);
     }
+}
+
+function turn_rng_stub() {
+    rn2(12);
+    rn2(12);
+    rn2(70);
+    rn2(400);
+    rn2(20);
+    rn2(94);
 }
 
 // C ref: allmain.c moveloop()

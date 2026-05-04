@@ -9,8 +9,9 @@ import {
     HWALL, VWALL, TLCORNER, TRCORNER, BLCORNER, BRCORNER,
     CROSSWALL, TUWALL, TDWALL, TLWALL, TRWALL,
     D_NODOOR, D_ISOPEN, D_CLOSED, D_LOCKED,
+    SDOOR, FOUNTAIN,
 } from './const.js';
-import { NO_COLOR, CLR_GRAY, CLR_BROWN, CLR_WHITE, CLR_YELLOW, DEC_TO_UNICODE } from './terminal.js';
+import { NO_COLOR, CLR_GRAY, CLR_BROWN, CLR_WHITE, CLR_YELLOW, CLR_MAGENTA, CLR_BRIGHT_BLUE, DEC_TO_UNICODE } from './terminal.js';
 
 // ── ANSI color codes ──
 // Maps CLR_* constants (0-15) to ANSI SGR color codes.
@@ -43,14 +44,17 @@ function terrain_glyph(loc, x, y) {
     case ROOM:      return { ch: '~', color: NO_COLOR, dec: true };  // DEC middle dot
     case CORR:      return { ch: '#', color: NO_COLOR, dec: false };
     case DOOR:
-        if (loc.doormask & D_ISOPEN) return { ch: '|', color: CLR_BROWN, dec: false };
+        if (loc.doormask & D_ISOPEN) return { ch: 'a', color: CLR_BROWN, dec: true };
         if (loc.doormask & (D_CLOSED | D_LOCKED)) return { ch: '+', color: CLR_BROWN, dec: false };
         return { ch: '~', color: NO_COLOR, dec: true };  // D_NODOOR = floor
+    case SDOOR:
+        return { ch: loc.horizontal ? 'q' : 'x', color: NO_COLOR, dec: true };
     case STAIRS:
         // Check upstair vs downstair
         if (game.level?.upstair?.x === x && game.level?.upstair?.y === y)
             return { ch: '<', color: CLR_YELLOW, dec: false };
         return { ch: '>', color: CLR_YELLOW, dec: false };
+    case FOUNTAIN:  return { ch: '{', color: CLR_BRIGHT_BLUE, dec: false };
     // Wall types → DEC line-drawing characters
     case HWALL:     return { ch: 'q', color: NO_COLOR, dec: true };  // ─
     case VWALL:     return { ch: 'x', color: NO_COLOR, dec: true };  // │
@@ -91,7 +95,20 @@ export function newsym(x, y) {
         return;
     }
 
-    // Contestants: add monster, object, and trap display here.
+    if (cansee(x, y)) {
+        const mons = game.level?.monsters || [];
+        const m = mons.find(mon => mon?.mx === x && mon?.my === y);
+        if (m) {
+            show_glyph_cell(x, y, m.glyph || 'x', m.color ?? CLR_MAGENTA, false);
+            return;
+        }
+        const objs = game.level?.objects || [];
+        const obj = objs.find(o => o?.ox === x && o?.oy === y && o?.glyph);
+        if (obj) {
+            show_glyph_cell(x, y, obj.glyph, obj.color ?? CLR_YELLOW, false);
+            return;
+        }
+    }
 
     const tg = terrain_glyph(loc, x, y);
     // Only update display/memory if cell is IN_SIGHT (lit and visible)
@@ -211,7 +228,14 @@ function _statusLine1() {
 function _statusLine2() {
     const u = game.u;
     if (!u) return '';
-    return `Dlvl:${u.uz?.dlevel || 1} $:${game._goldCount || 0} HP:${u.uhp || 0}(${u.uhpmax || 0}) Pw:${u.uen || 0}(${u.uenmax || 0}) AC:${u.uac ?? 10} Xp:${u.ulevel || 1}/${u.uexp || 0} T:${game.moves || 1}`;
+    const showExp = game.flags?.showexp;
+    const showTime = game.flags?.time;
+    let line = `Dlvl:${u.uz?.dlevel || 1} $:${game._goldCount || 0} ` +
+        `HP:${u.uhp || 0}(${u.uhpmax || 0}) Pw:${u.uen || 0}(${u.uenmax || 0}) ` +
+        `AC:${u.uac ?? 10} Xp:${u.ulevel || 1}`;
+    if (showExp) line += `/${u.uexp || 0}`;
+    if (showTime) line += ` T:${game.moves || 1}`;
+    return line;
 }
 
 // ── Serialize terminal grid for screen comparison ──
@@ -324,4 +348,5 @@ export async function bot() {
 // ── pline ──
 export async function pline(msg) {
     game._pending_message = msg;
+    if (!game._message_hold_frames) game._message_hold_frames = 1;
 }

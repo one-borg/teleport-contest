@@ -202,20 +202,20 @@ function statusLine1() {
     const role = game.urole ? rank_of(game.urole, u.ulevel || 1, game.flags?.female) : 'Adventurer';
     const title = `${name} the ${role}`;
     const stats =
-        `St:${u.acurr?.a?.[0] ?? '?'} Dx:${u.acurr?.a?.[1] ?? '?'} ` +
-        `Co:${u.acurr?.a?.[2] ?? '?'} In:${u.acurr?.a?.[3] ?? '?'} ` +
-        `Wi:${u.acurr?.a?.[4] ?? '?'} Ch:${u.acurr?.a?.[5] ?? '?'}`;
+        `St:${u.acurr?.a?.[0] ?? '?'} Dx:${u.acurr?.a?.[3] ?? '?'} ` +
+        `Co:${u.acurr?.a?.[4] ?? '?'} In:${u.acurr?.a?.[1] ?? '?'} ` +
+        `Wi:${u.acurr?.a?.[2] ?? '?'} Ch:${u.acurr?.a?.[5] ?? '?'}`;
     const align = u.ualign?.type === 0 ? 'Neutral' : u.ualign?.type > 0 ? 'Lawful' : 'Chaotic';
     const gap = Math.max(1, 31 - title.length);
-    if (gap > 4) return `${title}\\x1b[${gap}C${stats} ${align}`;
     return `${title}${' '.repeat(gap)}${stats} ${align}`;
 }
 
 function statusLine2() {
     const u = game.u || {};
+    const baseAc = (u.uac ?? 10) - 10;
     return `Dlvl:${u.uz?.dlevel || 1} $:${game._goldCount || 0} ` +
         `HP:${u.uhp || 0}(${u.uhpmax || 0}) Pw:${u.uen || 0}(${u.uenmax || 0}) ` +
-        `AC:${u.uac ?? 10} Xp:${u.ulevel || 1}/${u.uexp || 0}`;
+        `AC:${baseAc} Xp:${u.ulevel || 1}`;
 }
 
 export async function player_selection(opts) {

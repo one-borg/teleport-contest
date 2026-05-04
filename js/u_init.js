@@ -158,6 +158,77 @@ function enermod(roleName, en) {
     }
 }
 
+const STARTING_ARMOR = Object.freeze({
+    Archeologist: [
+        { ac: 9, spe: 0 },  // leather jacket
+        { ac: 10, spe: 0 }, // fedora
+    ],
+    Barbarian: [
+        { ac: 7, spe: 0 },  // ring mail
+    ],
+    Caveman: [
+        { ac: 8, spe: 0 },  // leather armor
+    ],
+    Healer: [
+        { ac: 9, spe: 1 },  // leather gloves +1
+    ],
+    Knight: [
+        { ac: 7, spe: 1 },  // ring mail +1
+        { ac: 9, spe: 0 },  // helmet
+        { ac: 9, spe: 0 },  // small shield
+        { ac: 9, spe: 0 },  // leather gloves
+    ],
+    Monk: [
+        { ac: 9, spe: 2 },  // leather gloves +2
+        { ac: 8, spe: 1 },  // robe +1
+    ],
+    Priest: [
+        { ac: 8, spe: 0 },  // robe
+        { ac: 9, spe: 0 },  // small shield
+    ],
+    Ranger: [
+        { ac: 9, spe: 2 },  // cloak of displacement +2
+    ],
+    Rogue: [
+        { ac: 8, spe: 1 },  // leather armor +1
+    ],
+    Samurai: [
+        { ac: 4, spe: 0 },  // splint mail
+    ],
+    Tourist: [
+        { ac: 10, spe: 0 }, // Hawaiian shirt
+    ],
+    Valkyrie: [
+        { ac: 9, spe: 3 },  // small shield +3
+    ],
+    Wizard: [
+        { ac: 9, spe: 0 },  // cloak of magic resistance
+    ],
+});
+
+function armorBonus({ ac, spe }) {
+    return (10 - ac) + (spe || 0);
+}
+
+export function computeStartingAC(roleName) {
+    const items = STARTING_ARMOR[roleName] || [];
+    let bonus = 0;
+    for (const item of items) bonus += armorBonus(item);
+    return 10 - bonus;
+}
+
+export function applyStartingAC() {
+    const u = game.u || {};
+    if (u.uac != null) return;
+    if (u._pending_ac != null) {
+        u.uac = u._pending_ac;
+        delete u._pending_ac;
+        return;
+    }
+    const roleName = curRole().name.m;
+    u.uac = computeStartingAC(roleName);
+}
+
 export function newpw() {
     const u = game.u;
     const role = curRole();
@@ -217,5 +288,5 @@ export function u_init_inventory_attrs() {
 
     game._goldCount = u.umoney0;
     u.uexp = 0;
-    if (u.uac == null) u.uac = 10;
+    if (u.uac == null) u._pending_ac = computeStartingAC(roleName);
 }

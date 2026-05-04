@@ -33,6 +33,7 @@ import {
 import { getrumor_stub, get_rnd_text_stub } from './rumors.js';
 import { getGemProbTable, getGemProbTotal } from './objdata.js';
 import { createRequire } from 'module';
+import { CLR_YELLOW, CLR_MAGENTA } from './terminal.js';
 
 const require = createRequire(import.meta.url);
 
@@ -299,7 +300,9 @@ function mksobj_init(otmp, otyp) {
 }
 
 function mksobj_at(otyp, x, y, init, artif) {
-    return mksobj(otyp, init, artif);
+    const otmp = mksobj(otyp, init, artif);
+    place_object(otmp, x, y);
+    return otmp;
 }
 
 // mkobj class selection probabilities (mkobj.c)
@@ -478,6 +481,7 @@ function mkobj(oclass, artif) {
         }
     }
     const obj = mksobj(0, false, artif);
+    obj.oclass = oclass;
     if (selectedFood) {
         consume_food_init_rng(selectedFood);
     }
@@ -524,7 +528,9 @@ function mkobj(oclass, artif) {
 }
 
 function mkobj_at(oclass, x, y, artif) {
-    return mkobj(oclass, artif);
+    const obj = mkobj(oclass, artif);
+    place_object(obj, x, y);
+    return obj;
 }
 
 function mkgold(amount, x, y) {
@@ -537,9 +543,39 @@ function mkgold(amount, x, y) {
     }
     // mksobj_at(GOLD_PIECE) calls next_ident
     next_ident();
+    const otmp = { otyp: GOLD_PIECE, oclass: COIN_CLASS, quan: amount, owt: amount, cursed: false, blessed: false };
+    otmp.glyph = '$';
+    otmp.color = CLR_YELLOW;
+    place_object(otmp, x, y);
 }
 
-function place_object(otmp, x, y) { /* stub */ }
+function place_object(otmp, x, y) {
+    if (!otmp) return;
+    otmp.ox = x;
+    otmp.oy = y;
+    if (otmp.otyp === GOLD_PIECE || otmp.oclass === COIN_CLASS) {
+        otmp.glyph = '$';
+        otmp.color = CLR_YELLOW;
+    } else if (!otmp.glyph) {
+        switch (otmp.oclass) {
+        case WEAPON_CLASS: otmp.glyph = ')'; break;
+        case ARMOR_CLASS: otmp.glyph = '['; break;
+        case RING_CLASS: otmp.glyph = '='; break;
+        case AMULET_CLASS: otmp.glyph = '"'; break;
+        case TOOL_CLASS: otmp.glyph = '('; break;
+        case FOOD_CLASS: otmp.glyph = '%'; break;
+        case POTION_CLASS: otmp.glyph = '!'; break;
+        case SCROLL_CLASS: otmp.glyph = '?'; break;
+        case SPBOOK_CLASS: otmp.glyph = '+'; break;
+        case WAND_CLASS: otmp.glyph = '/'; break;
+        case GEM_CLASS: otmp.glyph = '*'; break;
+        default: otmp.glyph = '?'; break;
+        }
+        otmp.color = CLR_MAGENTA;
+    }
+    if (!game.level?.objects) game.level.objects = [];
+    game.level.objects.push(otmp);
+}
 function dealloc_obj(otmp) { /* stub */ }
 function add_to_buried(otmp) { /* stub */ }
 function curse(otmp) { if (otmp) otmp.cursed = true; }
@@ -621,7 +657,12 @@ async function makemon(mdat, x, y, mmflags) {
     // For random monsters this varies widely. Since fill_ordinary_room
     // and mineralize calls are in fastforward, this stub won't be called
     // for those. It's only needed if mklev structural code calls makemon.
-    return { mx: x, my: y, mhp: hp, msleeping: 0, mpeaceful: 0 };
+    const mtmp = { mx: x, my: y, mhp: hp, msleeping: 0, mpeaceful: 0, glyph: 'x', color: CLR_MAGENTA };
+    if (game.level) {
+        if (!game.level.monsters) game.level.monsters = [];
+        game.level.monsters.push(mtmp);
+    }
+    return mtmp;
 }
 
 // maketrap stub
@@ -1469,25 +1510,25 @@ function dosdoor(x, y, aroom, type) {
     loc.typ = type;
     if (type === DOOR) {
         if (!rn2(3)) {
-            if (!rn2(5)) loc.flags = D_ISOPEN;
-            else if (!rn2(6)) loc.flags = D_LOCKED;
-            else loc.flags = D_CLOSED;
-            if (loc.flags !== D_ISOPEN && !shdoor
+            if (!rn2(5)) loc.doormask = D_ISOPEN;
+            else if (!rn2(6)) loc.doormask = D_LOCKED;
+            else loc.doormask = D_CLOSED;
+            if (loc.doormask !== D_ISOPEN && !shdoor
                 && level_difficulty() >= 5 && !rn2(25))
-                loc.flags |= D_TRAPPED;
+                loc.doormask |= D_TRAPPED;
         } else {
-            loc.flags = shdoor ? D_ISOPEN : D_NODOOR;
+            loc.doormask = shdoor ? D_ISOPEN : D_NODOOR;
         }
-        if (loc.flags & D_TRAPPED) {
+        if (loc.doormask & D_TRAPPED) {
             if (level_difficulty() >= 9 && !rn2(5)) {
-                loc.flags = D_NODOOR;
+                loc.doormask = D_NODOOR;
             }
         }
     } else {
-        if (shdoor || !rn2(5)) loc.flags = D_LOCKED;
-        else loc.flags = D_CLOSED;
+        if (shdoor || !rn2(5)) loc.doormask = D_LOCKED;
+        else loc.doormask = D_CLOSED;
         if (!shdoor && level_difficulty() >= 4 && !rn2(20))
-            loc.flags |= D_TRAPPED;
+            loc.doormask |= D_TRAPPED;
     }
     add_door(x, y, aroom);
 }
