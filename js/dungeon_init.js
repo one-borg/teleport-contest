@@ -331,6 +331,9 @@ function init_dungeon_dungeons(pd, dngidx, dgn) {
     }
 
     game.dungeons[dngidx] = dptr;
+    if (dptr.dname === 'The Gnomish Mines') {
+        game.mines_dnum = dngidx;
+    }
 
     init_dungeon_set_entry(pd, dngidx);
     if (dptr.flags.unconnected) {
@@ -450,6 +453,13 @@ export function init_dungeons() {
             if (!place_level(pd.start, pd)) throw new Error('init_dungeon: could not place levels');
             for (; pd.start < pd.n_levs; pd.start++) if (pd.final_lev[pd.start]) add_level(pd.final_lev[pd.start]);
             i++;
+        }
+    }
+
+    for (const lev of pd.final_lev) {
+        if (lev && lev.proto === 'oracle') {
+            game.oracle_level = { dnum: lev.dlevel.dnum, dlevel: lev.dlevel.dlevel };
+            break;
         }
     }
 

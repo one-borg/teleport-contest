@@ -7,7 +7,7 @@
 
 import { game } from './gstate.js';
 import { GameMap } from './game.js';
-import { rn2, rnd, rn1 } from './rng.js';
+import { rn2, rnd, rn1, rne } from './rng.js';
 import { init_rect, rnd_rect, get_rect, split_rects } from './rect.js';
 import { depth as depth_of_level } from './hacklib.js';
 import {
@@ -23,18 +23,24 @@ import {
     ICE, MOAT, POOL, WATER, LAVAPOOL, LAVAWALL, DBWALL,
     A_LAWFUL, Align2amask,
     LR_UPTELE,
+    Is_rogue_level,
 } from './const.js';
 
 // Object/class constants (normally from objects.js, not in contest template)
+// Values from include/objclass.h (NetHack 5.0)
 const RANDOM_CLASS = 0;
-const WEAPON_CLASS = 1;
-const ARMOR_CLASS = 2;
-const RING_CLASS = 3;
+const WEAPON_CLASS = 2;
+const ARMOR_CLASS = 3;
+const RING_CLASS = 4;
+const AMULET_CLASS = 5;
+const TOOL_CLASS = 6;
 const FOOD_CLASS = 7;
-const SCROLL_CLASS = 8;
-const POTION_CLASS = 9;
-const TOOL_CLASS = 12;
-const GEM_CLASS = 14;
+const POTION_CLASS = 8;
+const SCROLL_CLASS = 9;
+const SPBOOK_CLASS = 10;
+const WAND_CLASS = 11;
+const COIN_CLASS = 12;
+const GEM_CLASS = 13;
 const BOULDER = 465;
 const GOLD_PIECE = 466;
 const ROCK = 467;
@@ -43,7 +49,7 @@ const SCR_TELEPORTATION = 287;
 const BELL = 358;
 const CORPSE = 471;
 const STATUE = 472;
-const SPBOOK_no_NOVEL = 11;
+const SPBOOK_no_NOVEL = -SPBOOK_CLASS;
 
 // Supply chest items
 const POT_HEALING = 235;
@@ -199,13 +205,32 @@ let _nextObjId = 1;
 // C ref: mkobj.c next_ident — rnd(2) for item identification
 function next_ident() { rnd(2); }
 
-// C ref: mkobj.c blessorcurse — rn2(4) BUC selection
-function blessorcurse(otmp) {
-    const r = rn2(4);
+// C ref: mkobj.c blessorcurse — rn2(chance) BUC selection
+function blessorcurse(otmp, chance = 4) {
+    const r = rn2(chance);
     if (otmp) {
         otmp.cursed = (r === 0);
         otmp.blessed = false;
     }
+}
+
+// C ref: mkobj.c mkobj_erosions — RNG consumption for erosion/grease
+function mkobj_erosions_stub() {
+    if (rn2(100) !== 0) {
+        if (rn2(80) === 0) {
+            let eroded = 0;
+            do {
+                eroded++;
+            } while (eroded < 3 && rn2(9) === 0);
+        }
+        if (rn2(80) === 0) {
+            let eroded2 = 0;
+            do {
+                eroded2++;
+            } while (eroded2 < 3 && rn2(9) === 0);
+        }
+    }
+    rn2(1000);
 }
 
 // C ref: mkobj.c mksobj — create a specific object
@@ -235,10 +260,26 @@ function mksobj_init(otmp, otyp) {
         rndmonst_adj_stub();
         const diff = level_difficulty();
         rn2(Math.trunc(diff / 2) + 10);
+    } else if (otyp === 349 || otyp === 353) { // ARROW or DART
+        rn2(6); // is_multigen quantity
+        const r11 = rn2(11);
+        if (r11 === 0) {
+            rne(3);
+            rn2(2);
+        } else {
+            const r10 = rn2(10);
+            if (r10 === 0) {
+                rne(3);
+            } else {
+                blessorcurse(otmp, 10);
+            }
+        }
+        rn2(100);
+        mkobj_erosions_stub();
     } else if (otyp >= 270 && otyp < 300) { // scrolls
-        blessorcurse(otmp);
+        blessorcurse(otmp, 4);
     } else if (otyp >= 230 && otyp < 270) { // potions
-        blessorcurse(otmp);
+        blessorcurse(otmp, 4);
     }
 }
 
@@ -246,14 +287,113 @@ function mksobj_at(otyp, x, y, init, artif) {
     return mksobj(otyp, init, artif);
 }
 
+// mkobj class selection probabilities (mkobj.c)
+const MKOBJ_PROBS = [
+    { iprob: 10, iclass: WEAPON_CLASS },
+    { iprob: 11, iclass: ARMOR_CLASS },
+    { iprob: 20, iclass: FOOD_CLASS },
+    { iprob: 8, iclass: TOOL_CLASS },
+    { iprob: 7, iclass: GEM_CLASS },
+    { iprob: 16, iclass: POTION_CLASS },
+    { iprob: 16, iclass: SCROLL_CLASS },
+    { iprob: 4, iclass: SPBOOK_CLASS },
+    { iprob: 4, iclass: WAND_CLASS },
+    { iprob: 3, iclass: RING_CLASS },
+    { iprob: 1, iclass: AMULET_CLASS },
+];
+
+const ROGUE_PROBS = [
+    { iprob: 12, iclass: WEAPON_CLASS },
+    { iprob: 12, iclass: ARMOR_CLASS },
+    { iprob: 22, iclass: FOOD_CLASS },
+    { iprob: 22, iclass: POTION_CLASS },
+    { iprob: 22, iclass: SCROLL_CLASS },
+    { iprob: 5, iclass: WAND_CLASS },
+    { iprob: 5, iclass: RING_CLASS },
+];
+
+const HELL_PROBS = [
+    { iprob: 20, iclass: WEAPON_CLASS },
+    { iprob: 20, iclass: ARMOR_CLASS },
+    { iprob: 16, iclass: FOOD_CLASS },
+    { iprob: 12, iclass: TOOL_CLASS },
+    { iprob: 10, iclass: GEM_CLASS },
+    { iprob: 1, iclass: POTION_CLASS },
+    { iprob: 1, iclass: SCROLL_CLASS },
+    { iprob: 8, iclass: WAND_CLASS },
+    { iprob: 8, iclass: RING_CLASS },
+    { iprob: 4, iclass: AMULET_CLASS },
+];
+
+// oclass_prob_totals derived from upstream objects.h (NetHack 5.0)
+const OCLASS_PROB_TOTALS = [
+    0,    // 0 RANDOM_CLASS (unused)
+    0,    // 1 ILLOBJ_CLASS
+    1002, // 2 WEAPON_CLASS
+    1000, // 3 ARMOR_CLASS
+    28,   // 4 RING_CLASS
+    1000, // 5 AMULET_CLASS
+    1000, // 6 TOOL_CLASS
+    1000, // 7 FOOD_CLASS
+    1000, // 8 POTION_CLASS
+    1000, // 9 SCROLL_CLASS
+    1000, // 10 SPBOOK_CLASS
+    1000, // 11 WAND_CLASS
+    1000, // 12 COIN_CLASS
+    1000, // 13 GEM_CLASS
+    1000, // 14 ROCK_CLASS
+    1000, // 15 BALL_CLASS
+    1000, // 16 CHAIN_CLASS
+    1000, // 17 VENOM_CLASS
+];
+
+function pick_class_from_probs(probs) {
+    let tprob = rnd(100);
+    for (const { iprob, iclass } of probs) {
+        tprob -= iprob;
+        if (tprob <= 0) return iclass;
+    }
+    return probs[probs.length - 1].iclass;
+}
+
 function mkobj(oclass, artif) {
     // Class-based random object creation
     // For contest, just consume the right RNG
-    rnd(100);  // mkobj selection
-    const mat = rnd(1000); // mkobj material/weight selection
+    if (oclass === RANDOM_CLASS) {
+        const probs = Is_rogue_level(game.u?.uz) ? ROGUE_PROBS : MKOBJ_PROBS;
+        // Inhell handling not yet wired; default to standard probs.
+        oclass = pick_class_from_probs(probs);
+    }
+    if (oclass === SPBOOK_no_NOVEL) {
+        rnd(999); // rnd_class(svb.bases[SPBOOK_CLASS], SPE_BLANK_PAPER)
+        oclass = SPBOOK_CLASS;
+    } else {
+        const total = OCLASS_PROB_TOTALS[oclass] ?? 1000;
+        rnd(total); // mkobj selection within class
+    }
     const obj = mksobj(0, false, artif);
-    // Approximate: some mkobj items call blessorcurse (scrolls/potions).
-    if (mat < 200) blessorcurse(obj);
+    if (oclass === POTION_CLASS || oclass === SCROLL_CLASS) {
+        blessorcurse(obj, 4);
+    } else if (oclass === SPBOOK_CLASS) {
+        blessorcurse(obj, 17);
+    } else if (oclass === FOOD_CLASS || oclass === GEM_CLASS) {
+        rn2(6);
+    } else if (oclass === WEAPON_CLASS) {
+        rn2(6);
+    } else if (oclass === ARMOR_CLASS) {
+        const r10 = rn2(10);
+        if (r10 !== 0) {
+            const r11 = rn2(11);
+            if (r11 === 0) {
+                rne(3);
+            } else {
+                blessorcurse(obj, 10);
+            }
+        } else {
+            rn2(2);
+            rne(3);
+        }
+    }
     return obj;
 }
 
@@ -1619,8 +1759,8 @@ function mktrap_victim(trap) {
         curse(otmp);
     } while (!rn2(5));
     // Victim type
-    const PM_ELF = 18, PM_DWARF = 19, PM_ORC = 20, PM_GNOME = 21, PM_HUMAN = 22;
-    const PM_ARCHEOLOGIST = 305, PM_WIZARD = 321;
+    const PM_ELF = 264, PM_DWARF = 44, PM_ORC = 72, PM_GNOME = 165, PM_HUMAN = 260;
+    const PM_ARCHEOLOGIST = 331, PM_WIZARD = 343;
     let victim_mnum;
     switch (rn2(15)) {
     case 0:
@@ -1713,7 +1853,11 @@ async function fill_ordinary_room(croom, bonus_items) {
 
     const pos = { x: 0, y: 0 };
     // Sleeping monster (33%)
-    if (!rn2(3) && somexyspace(croom, pos)) {
+    if (!rn2(3)) {
+        if (!somexyspace(croom, pos)) {
+            pos.x = croom.rlx;
+            pos.y = croom.rly;
+        }
         await makemon(null, pos.x, pos.y, 2); // MM_NOGRP
     }
     // Traps
@@ -1750,9 +1894,13 @@ async function fill_ordinary_room(croom, bonus_items) {
     // Bonus items
     let skip_chests = false;
     if (bonus_items && somexyspace(croom, pos)) {
-        const branchp = is_branchlev();
+        const uz_branch = is_branchlev();
+        const mines_dnum = g.mines_dnum;
         const oracle_dlevel = g.oracle_level?.dlevel ?? 5;
-        if (branchp) {
+        const on_mines_branch = uz_branch && mines_dnum != null
+            && (g.u?.uz?.dnum ?? 0) !== mines_dnum
+            && (uz_branch.end1?.dnum === mines_dnum || uz_branch.end2?.dnum === mines_dnum);
+        if (on_mines_branch) {
             // Mines entrance bonus food
             mksobj_at((rn2(5) < 3) ? FOOD_RATION : rn2(2) ? CRAM_RATION : LEMBAS_WAFER,
                 pos.x, pos.y, true, false);
