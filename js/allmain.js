@@ -10,10 +10,11 @@ import { mklev, l_nhcore_init, u_on_upstairs } from './mklev.js';
 import { rhack } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline, set_screen_override, clear_screen_override } from './display.js';
 import { vision_recalc, vision_reset, init_vision_globals } from './vision.js';
-import { fastforward_pre_mklev, fastforward_step, fastforward_fill_mineralize } from './fastforward.js';
+import { fastforward_step, fastforward_fill_mineralize } from './fastforward.js';
 import { buildLegacyText } from './chargen.js';
 import { nhgetch } from './input.js';
 import { u_init_misc, u_init_inventory_attrs } from './u_init.js';
+import { init_dungeons } from './dungeon_init.js';
 
 // C ref: allmain.c newgame()
 export async function newgame() {
@@ -21,7 +22,7 @@ export async function newgame() {
 
     // Fast-forward through pre-mklev startup RNG calls.
     // Covers: o_init (shuffles), dungeon init.
-    fastforward_pre_mklev();
+    init_dungeons();
 
     // Basic player init (role/race chosen in chargen).
     u_init_misc();
