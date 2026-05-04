@@ -19,7 +19,7 @@ import {
     SDOOR, SCORR, IRONBARS, FOUNTAIN, SINK, ALTAR, GRAVE,
     DIR_N, DIR_S, DIR_E, DIR_W, DIR_180,
     IS_WALL, IS_STWALL, IS_DOOR, IS_OBSTRUCTED, IS_FURNITURE, IS_POOL,
-    SPACE_POS, isok, W_NONDIGGABLE, FILL_NORMAL,
+    SPACE_POS, isok, W_NONDIGGABLE, FILL_NONE, FILL_NORMAL,
     ICE, MOAT, POOL, WATER, LAVAPOOL, LAVAWALL, DBWALL,
     A_LAWFUL, Align2amask,
     LR_UPTELE,
@@ -495,17 +495,30 @@ async function makelevel() {
 
     // Vault creation (simplified for contest)
     if (g.vault_x !== -1) {
-        const vw = { v: 1 }, vh = { v: 1 };
-        const vx = { v: g.vault_x }, vy = { v: g.vault_y };
-        if (check_room(vx, vw, vy, vh, true)) {
+        const fillVault = (vx, vy, vw, vh) => {
             add_room(vx.v, vy.v, vx.v + vw.v, vy.v + vh.v, true, VAULT, false);
             g.level.flags.has_vault = true;
             const vaultRoom = g.level.rooms[g.level.nroom - 1];
             if (vaultRoom) vaultRoom.needfill = FILL_NORMAL;
+        };
+        const vw = { v: 1 }, vh = { v: 1 };
+        const vx = { v: g.vault_x }, vy = { v: g.vault_y };
+        if (check_room(vx, vw, vy, vh, true)) {
+            fillVault(vx, vy, vw, vh);
             if (!is_branchlev()) rn2(3);
             if (!rn2(3)) await makeniche(TELEP_TRAP);
-        } else if (rnd_rect()) {
-            // Fallback vault attempt — simplified
+        } else if (rnd_rect() && create_vault()) {
+            g.vault_x = g.level.rooms[g.level.nroom]?.lx ?? -1;
+            g.vault_y = g.level.rooms[g.level.nroom]?.ly ?? -1;
+            const vx2 = { v: g.vault_x }, vy2 = { v: g.vault_y };
+            const vw2 = { v: 1 }, vh2 = { v: 1 };
+            if (check_room(vx2, vw2, vy2, vh2, true)) {
+                fillVault(vx2, vy2, vw2, vh2);
+                if (!is_branchlev()) rn2(3);
+                if (!rn2(3)) await makeniche(TELEP_TRAP);
+            } else if (g.level.rooms[g.level.nroom]) {
+                g.level.rooms[g.level.nroom].hx = -1;
+            }
         }
     }
 
@@ -514,8 +527,23 @@ async function makelevel() {
         place_branch(branchp);
     }
 
-    // Fill rooms + mineralize: consumed by fastforward_fill_mineralize
-    // Called externally from allmain.js after mklev structural phase
+    // Fill ordinary rooms
+    let fillable_room_count = 0;
+    for (const croom of g.level.rooms || []) {
+        if (croom && croom.hx > 0 && room_is_fillable(croom)) fillable_room_count++;
+    }
+    let bonus_item_room_countdown = fillable_room_count ? rn2(fillable_room_count) : -1;
+    for (const croom of g.level.rooms || []) {
+        if (!croom || croom.hx <= 0) continue;
+        const fillable = room_is_fillable(croom);
+        await fill_ordinary_room(croom, fillable && bonus_item_room_countdown === 0);
+        if (fillable) bonus_item_room_countdown--;
+    }
+    // Fill special rooms (vault, zoo, etc.)
+    const nroom = g.level.nroom ?? 0;
+    for (let i = 0; i < nroom; i++) {
+        fill_special_room(g.level.rooms?.[i]);
+    }
 }
 
 // C ref: mklev.c makerooms()
@@ -535,7 +563,10 @@ async function makerooms() {
             }
         } else {
             // Themed room selection (reservoir sampling)
-            if (!(await themerooms_generate(difficulty))) {
+            g.in_mk_themerooms = true;
+            const ok = await themerooms_generate(difficulty);
+            g.in_mk_themerooms = false;
+            if (!ok) {
                 if (themeroom_tries++ > 10
                     || g.level.nroom >= Math.trunc(MAXNROFROOMS / 6))
                     break;
@@ -1758,6 +1789,28 @@ async function fill_ordinary_room(croom, bonus_items) {
     }
 }
 
+function room_is_fillable(croom) {
+    return (croom.rtype === OROOM || croom.rtype === THEMEROOM)
+        && croom.needfill === FILL_NORMAL;
+}
+
+function fill_special_room(croom) {
+    if (!croom) return;
+    for (let i = 0; i < (croom.nsubrooms || 0); i++) {
+        fill_special_room(croom.sbrooms?.[i]);
+    }
+    if (croom.rtype === OROOM || croom.rtype === THEMEROOM
+        || croom.needfill === FILL_NONE)
+        return;
+    if (croom.needfill !== FILL_NORMAL) return;
+    if (croom.rtype === VAULT) {
+        const depth = Math.abs(depth_of_level(game.u?.uz));
+        for (let x = croom.lx; x <= croom.hx; x++)
+            for (let y = croom.ly; y <= croom.hy; y++)
+                mkgold(rn1(depth * 100, 51), x, y);
+    }
+}
+
 // ============================================================
 // Mineralize
 // ============================================================
@@ -1872,7 +1925,7 @@ function set_wall_state() { /* no-op for contest */ }
 
 function level_finalize_topology() {
     bound_digging();
-    // mineralize is consumed by fastforward_fill_mineralize
+    mineralize(-1, -1, -1, -1, false);
     game.in_mklev = false;
     if (!game.level?.flags?.is_maze_lev) {
         const nroom = game.level?.nroom ?? 0;

@@ -24,6 +24,7 @@ Maximize final contest performance, not just public-session score:
 4. Keep module boundaries close to upstream C files to reduce Phase 2 diff.
 5. Never edit frozen surfaces (`js/isaac64.js`, `js/terminal.js`, `frozen/*`) as part of feature work.
    Treat any local edits to frozen files as accidental; revert them before commit.
+6. README.md is frozen for this project. Do not edit it.
 
 ## Execution Loop (for every milestone)
 1. Run targeted sessions only.

@@ -10,18 +10,19 @@ import { mklev, l_nhcore_init, u_on_upstairs } from './mklev.js';
 import { rhack } from './cmd.js';
 import { docrt, cls, bot, flush_screen, pline, set_screen_override, clear_screen_override } from './display.js';
 import { vision_recalc, vision_reset, init_vision_globals } from './vision.js';
-import { fastforward_step, fastforward_fill_mineralize } from './fastforward.js';
+import { fastforward_step } from './fastforward.js';
 import { buildLegacyText } from './chargen.js';
 import { nhgetch } from './input.js';
 import { u_init_misc, u_init_inventory_attrs } from './u_init.js';
 import { init_dungeons } from './dungeon_init.js';
+import { init_objects } from './o_init.js';
 
 // C ref: allmain.c newgame()
 export async function newgame() {
     const g = game;
 
-    // Fast-forward through pre-mklev startup RNG calls.
-    // Covers: o_init (shuffles), dungeon init.
+    // Object and dungeon initialization (RNG parity critical).
+    init_objects();
     init_dungeons();
 
     // Basic player init (role/race chosen in chargen).
@@ -32,22 +33,16 @@ export async function newgame() {
     l_nhcore_init();
 
     // Set up game state needed by mklev
-    g.dungeons = [{ dname: 'The Dungeons of Doom', depth_start: 1, num_dunlevs: 30 }];
     g.u = g.u || {};
     g.u.uz = { dnum: 0, dlevel: 1 };
     g.flags = g.flags || {};
-    // Branch: Mines entrance on level 1 (for seed 8000)
-    g.branches = [
-        { end1: { dnum: 0, dlevel: 1 }, end2: { dnum: 2, dlevel: 1 }, end1_up: true },
-    ];
+    if (!g.dungeons || g.dungeons.length === 0) {
+        g.dungeons = [{ dname: 'The Dungeons of Doom', depth_start: 1, num_dunlevs: 30 }];
+    }
 
     // Real mklev generates the level with correct room positions
     // Structural phase consumes RNG for rooms/corridors/doors/stairs
     await mklev();
-
-    // Fill rooms + mineralize: replayed by fastforward
-    // These create objects/monsters that don't affect terrain display
-    fastforward_fill_mineralize();
 
     // Initialize inventory-derived attributes and basic stats.
     u_init_inventory_attrs();
