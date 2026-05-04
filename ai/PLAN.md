@@ -9,7 +9,6 @@
 - Never edit frozen infrastructure (`js/isaac64.js`, `js/terminal.js`, `frozen/*`).
 - README.md is frozen for this project. Do not edit it.
 - If any additional files are explicitly declared frozen by the user, treat them as read-only and call that out here.
-- `js/terminal.js` is currently modified in the working tree outside this plan; do not touch or revert without explicit approval.
 
 ## Baseline (measured on 2026-05-04)
 - Full score not re-run in this revision.
