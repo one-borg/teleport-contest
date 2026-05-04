@@ -85,7 +85,14 @@ export class NethackGame {
             // and compares to the C session's recorded screen.
             const disp = game?.nhDisplay;
             const term = disp?.terminal || disp;
-            nhGame._screens.push(term?.serialize ? term.serialize() : '');
+            // Prefer the engine's full wire-format screen output when
+            // available (includes ANSI/DEC details), then fall back to
+            // terminal.serialize().
+            const screen =
+                typeof game?._screen_output === 'string'
+                    ? game._screen_output
+                    : (term?.serialize ? term.serialize() : '');
+            nhGame._screens.push(screen);
             nhGame._rngSlices.push(slice);
 
             const cursor = disp ? [disp.cursorCol ?? 0, disp.cursorRow ?? 0, 1] : null;
@@ -147,4 +154,3 @@ export async function runSegment(input, prevGame = null) {
 
     return nhGame;
 }
-

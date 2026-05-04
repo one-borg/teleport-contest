@@ -23,7 +23,7 @@ const ANSI_COLOR = [
     34,  // CLR_BLUE      4
     35,  // CLR_MAGENTA   5
     36,  // CLR_CYAN      6
-    37,  // CLR_GRAY      7
+    90,  // CLR_GRAY      7
     39,  // NO_COLOR      8 → default
     91,  // CLR_ORANGE    9
     92,  // CLR_BRIGHT_GREEN  10
@@ -101,8 +101,20 @@ export function newsym(x, y) {
         }
     } else if (loc.remembered_glyph) {
         // Out of sight but remembered — show remembered glyph
-        show_glyph_cell(x, y, loc.remembered_glyph.ch,
-            loc.remembered_glyph.color, loc.remembered_glyph.decgfx);
+        const mem = loc.remembered_glyph;
+        // C tty output renders remembered room-floor dots in dim gray,
+        // while other remembered terrain keeps its base color.
+        const memColor =
+            loc.typ === ROOM && mem.color === NO_COLOR
+                ? CLR_GRAY
+                : mem.color;
+        show_glyph_cell(
+            x,
+            y,
+            mem.ch,
+            memColor,
+            mem.decgfx
+        );
     }
 }
 
@@ -233,6 +245,11 @@ function _buildScreenOutput() {
     const display = game?.nhDisplay;
     if (!display) return;
 
+    if (typeof game._screen_override === 'string') {
+        game._screen_output = game._screen_override;
+        return;
+    }
+
     let output = '';
     // Row 0: message
     output += (game._pending_message || '') + '\n';
@@ -276,6 +293,14 @@ function _buildScreenOutput() {
         if (game.u?.ux > 0)
             display.setCursor(game.u.ux - 1, game.u.uy + 1);
     }
+}
+
+export function set_screen_override(screenText) {
+    game._screen_override = String(screenText ?? '');
+}
+
+export function clear_screen_override() {
+    game._screen_override = null;
 }
 
 // ── flush_screen ──

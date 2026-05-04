@@ -100,8 +100,12 @@ export async function moveloop_core() {
     // Read and execute one command
     await rhack(0);
 
-    // Clear message after command is processed
-    g._pending_message = '';
+    // Keep command messages visible for one input boundary when requested.
+    if (g._message_hold_frames > 0) {
+        g._message_hold_frames--;
+    } else {
+        g._pending_message = '';
+    }
 
     // Advance turn
     if (g.context?.move) {

@@ -12,6 +12,11 @@ Maximize final contest performance, not just public-session score:
 - All other sessions: Screen `0/*`; RNG diverges early-to-mid run.
 - Current code still relies on large `fastforward.js` replay scaffolding and many stubs.
 
+## Current Status (updated on 2026-05-04)
+- `1/44` public sessions passing.
+- `seed8000-tourist-starter` now passes fully (RNG + Screen).
+- Stage 1 objective achieved; next focus is Stage 2 startup/chargen generalization.
+
 ## Non-Negotiable Strategy
 1. Port behavior from C, do not memorize sessions.
 2. Drive work by first mismatch in existing sessions.
@@ -129,6 +134,6 @@ Exit criteria:
 4. Maintain a changelog of which sessions/features each commit is intended to unlock.
 
 ## Immediate Next Actions
-1. Make `seed8000-tourist-starter` pass by fixing screen parity and capture timing.
-2. Replace startup RNG replay with real chargen/init paths (`seed0077`, `seed0102` as primary checks).
-3. Build first-mismatch tooling and use it as the default development loop.
+1. Replace startup RNG replay with real chargen/init paths (`seed0077`, `seed0102` as primary checks).
+2. Use first-mismatch tooling on chargen-heavy sessions to identify the first real startup divergence.
+3. Start deleting `fastforward_pre_mklev` / `fastforward_post_mklev` calls as corresponding C init functions are ported.
