@@ -216,5 +216,5 @@ export function u_init_inventory_attrs() {
 
     game._goldCount = u.umoney0;
     u.uexp = 0;
-    if (u.uac == null) u.uac = 0;
+    if (u.uac == null) u.uac = 10;
 }

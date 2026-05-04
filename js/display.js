@@ -199,7 +199,7 @@ function _statusLine1() {
     const name = game.plname || 'Hero';
     const role = game.urole ? rank_of(game.urole, u.ulevel || 1, game.flags?.female) : 'Adventurer';
     const title = `${name} the ${role}`;
-    const stats = `St:${u.acurr?.a?.[0] || '?'} Dx:${u.acurr?.a?.[1] || '?'} Co:${u.acurr?.a?.[2] || '?'} In:${u.acurr?.a?.[3] || '?'} Wi:${u.acurr?.a?.[4] || '?'} Ch:${u.acurr?.a?.[5] || '?'}`;
+    const stats = `St:${u.acurr?.a?.[0] || '?'} Dx:${u.acurr?.a?.[3] || '?'} Co:${u.acurr?.a?.[4] || '?'} In:${u.acurr?.a?.[1] || '?'} Wi:${u.acurr?.a?.[2] || '?'} Ch:${u.acurr?.a?.[5] || '?'}`;
     const align = u.ualign?.type === 0 ? 'Neutral' : u.ualign?.type > 0 ? 'Lawful' : 'Chaotic';
     // C uses cursor-forward for gap between title and stats
     // C pads to align stats starting at a fixed column
